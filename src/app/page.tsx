@@ -1,103 +1,153 @@
-import Image from "next/image";
+'use client';
+import 'leaflet/dist/leaflet.css';
+import dynamic from 'next/dynamic';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import type { FeatureCollection, Feature, Point } from 'geojson';
+import type { LatLngExpression, LatLng, Layer, CircleMarker } from 'leaflet';
+import { supabase } from '@/lib/supabaseClient';
 
-export default function Home() {
+/* =========================
+   Tipos de tus observaciones
+   ========================= */
+type Activity = 'buceo' | 'pesca' | 'navegacion' | 'otros';
+
+type ObsProps = {
+  id: string;
+  species_id: number | null;
+  species_common?: string | null;
+  activity: Activity;
+  depth_min_m?: number | null;
+  depth_max_m?: number | null;
+  temperature_c?: number | null;
+  notes?: string | null;
+  observed_at: string;
+  is_private: boolean;
+};
+
+type ObsFeature = Feature<Point, ObsProps>;
+type ObsFC = FeatureCollection<Point, ObsProps>;
+
+/* ============================================
+   Tipos mínimos para los componentes dinámicos
+   ============================================ */
+type MapContainerDynProps = {
+  center: LatLngExpression;
+  zoom?: number;
+  style?: CSSProperties;
+  children?: ReactNode;
+};
+
+type TileLayerDynProps = {
+  url: string;
+  attribution?: string;
+};
+
+type GeoJSONDynProps = {
+  data: ObsFC;
+  pointToLayer?: (feature: ObsFeature, latlng: LatLng) => Layer;
+  onEachFeature?: (feature: ObsFeature, layer: Layer) => void;
+};
+
+/* =================================
+   Imports dinámicos (solo en cliente)
+   ================================= */
+const MapContainer = dynamic<MapContainerDynProps>(
+  () => import('react-leaflet').then((m) => m.MapContainer),
+  { ssr: false }
+);
+const TileLayer = dynamic<TileLayerDynProps>(
+  () => import('react-leaflet').then((m) => m.TileLayer),
+  { ssr: false }
+);
+const GeoJSON = dynamic<GeoJSONDynProps>(
+  () => import('react-leaflet').then((m) => m.GeoJSON),
+  { ssr: false }
+);
+
+/* =================
+   Página principal
+   ================= */
+export default function HomePage() {
+  const [mounted, setMounted] = useState<boolean>(false);
+  const [data, setData] = useState<ObsFC | null>(null);
+  const [Llib, setLlib] = useState<typeof import('leaflet') | null>(null); // Leaflet runtime
+
+  // Render solo tras montar (evita SSR issues)
+  useEffect(() => { setMounted(true); }, []);
+
+  // Carga Leaflet en cliente
+  useEffect(() => {
+    if (!mounted) return;
+    void import('leaflet').then((leaflet) => setLlib(leaflet));
+  }, [mounted]);
+
+  // Trae datos
+  useEffect(() => {
+  if (!mounted) return;
+  (async () => {
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
+    const url = token ? '/api/observations?include=mine' : '/api/observations';
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    const fc = (await res.json()) as ObsFC;
+    setData(fc);
+  })();
+}, [mounted]);
+
+  if (!mounted) return <main className="p-4">Cargando mapa…</main>;
+
+  // Helpers de estilo / popup
+  const colorByActivity = (a?: Activity): string =>
+    ({ buceo: '#2563eb', pesca: '#16a34a', navegacion: '#f59e0b', otros: '#6b7280' }[a ?? 'otros']);
+
+  const radiusByDepth = (min?: number | null, max?: number | null): number => {
+    const d = Math.max(0, Number(max ?? min ?? 0));
+    return Math.min(12, 4 + d * 0.2);
+  };
+
+  const popupHtml = (f: ObsFeature): string => {
+    const p = f.properties;
+    return `
+      <div style="min-width:180px">
+        <strong>${p.species_common ?? 'Sin especie'}</strong><br/>
+        Act.: ${p.activity ?? '-'}<br/>
+        Prof.: ${p.depth_min_m ?? '-'}–${p.depth_max_m ?? '-'} m<br/>
+        Temp.: ${p.temperature_c ?? '-'} °C<br/>
+        Fecha: ${p.observed_at ? new Date(p.observed_at).toLocaleString() : '-'}
+      </div>
+    `;
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+    <main className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Mapa de observaciones</h1>
+      <div className="h-[70vh] w-full rounded-2xl overflow-hidden border">
+        <MapContainer center={[-20.2, -70.1]} zoom={11} style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap"
+          />
+          {data && Llib && (
+            <GeoJSON
+              data={data}
+              pointToLayer={(feature, latlng) =>
+                Llib.circleMarker(latlng, {
+                  radius: radiusByDepth(feature.properties.depth_min_m, feature.properties.depth_max_m),
+                  weight: 2,
+                  opacity: 1,
+                  fillOpacity: 0.7,
+                  color: colorByActivity(feature.properties.activity),
+                })
+              }
+              onEachFeature={(feature, layer) => {
+                (layer as CircleMarker).bindPopup(popupHtml(feature));
+              }}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          )}
+        </MapContainer>
+      </div>
+    </main>
   );
 }
