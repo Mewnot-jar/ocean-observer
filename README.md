@@ -227,5 +227,3 @@ vercel --prod # producción
 
 ---
 
-## Licencia
-MIT (ajústala si corresponde).
