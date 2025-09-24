@@ -1,13 +1,14 @@
-'use client';
-import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { usePathname } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+"use client";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function Header() {
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
 
+  
   // Carga/escucha sesión
   useEffect(() => {
     let mounted = true;
@@ -29,29 +30,37 @@ export default function Header() {
 
   const nav = useMemo(
     () => [
-      { href: '/', label: 'Mapa' },
-      { href: '/add', label: 'Agregar' },
-      { href: '/my', label: 'Mis observaciones' },
+      { href: "/", label: "Mapa" },
+      { href: "/add", label: "Agregar" },
+      { href: "/my", label: "Mis observaciones" },
     ],
     []
   );
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname?.startsWith(href);
+    href === "/" ? pathname === "/" : pathname?.startsWith(href);
 
   async function signin() {
-    const mail = prompt('Ingresa tu correo para enviarte un Magic Link:') || '';
+    const mail = prompt("Ingresa tu correo para enviarte un Magic Link:") || "";
     if (!mail) return;
     const { error } = await supabase.auth.signInWithOtp({
       email: mail,
-      options: { emailRedirectTo: typeof window !== 'undefined' ? window.location.href : undefined },
+      options: {
+        emailRedirectTo:
+          typeof window !== "undefined" ? window.location.href : undefined,
+      },
     });
-    if (error) alert('No se pudo enviar el link');
-    else alert('Revisa tu correo y vuelve con la sesión iniciada.');
+    if (error) alert("No se pudo enviar el link");
+    else alert("Revisa tu correo y vuelve con la sesión iniciada.");
   }
 
   async function signout() {
     await supabase.auth.signOut();
+    if (pathname === '/') {
+      window.location.reload();  // <-- simple y seguro
+    } else {
+      window.location.href = '/';
+    }
   }
 
   return (
@@ -69,8 +78,8 @@ export default function Header() {
                 href={item.href}
                 className={`px-2 py-1 rounded-md text-sm ${
                   isActive(item.href)
-                    ? 'bg-zinc-900 text-white'
-                    : 'text-zinc-700 hover:bg-zinc-100'
+                    ? "bg-zinc-900 text-white"
+                    : "text-zinc-700 hover:bg-zinc-100"
                 }`}
               >
                 {item.label}
@@ -80,24 +89,22 @@ export default function Header() {
 
           <div className="flex items-center gap-3">
             <span className="hidden sm:block text-xs text-zinc-600 max-w-[150px] truncate">
-              {email ? email : 'Invitado'}
+              {email ? email : "Invitado"}
             </span>
             {email ? (
               <button
-                onClick={signout}
+                onClick={() => signout()}
                 className="text-sm px-2 py-1 rounded-md border hover:bg-zinc-50"
-                title="Cerrar sesión"
               >
                 Salir
               </button>
             ) : (
-              <button
-                onClick={signin}
+              <a
+                href="/auth"
                 className="text-sm px-2 py-1 rounded-md bg-zinc-900 text-white hover:opacity-90"
-                title="Ingresar con Magic Link"
               >
                 Ingresar
-              </button>
+              </a>
             )}
           </div>
         </div>
