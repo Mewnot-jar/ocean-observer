@@ -1,6 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import type { LatLngLiteral } from 'leaflet';
+import MapPicker from '@/components/MapPicker';
+
 
 type Activity = 'buceo' | 'pesca' | 'navegacion' | 'otros';
 
@@ -15,6 +18,7 @@ export default function ObservationForm() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [mode, setMode] = useState<'direct' | 'api'>('direct');
   const [status, setStatus] = useState('');
+  const [pos, setPos] = useState<LatLngLiteral | null>(null);
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -43,10 +47,10 @@ export default function ObservationForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus('');
-    if (!coords) {
-      alert('Activa el GPS primero');
-      return;
-    }
+     if (!pos) {
+    alert('Elige un punto en el mapa (o usa “Usar mi ubicación”).');
+    return;
+  }
 
     const session = await ensureLogged();
     if (!session) return;
@@ -60,8 +64,8 @@ export default function ObservationForm() {
       temperature_c: tempC ? Number(tempC) : null,
       notes: notes || null,
       is_private: isPrivate,
-      lat: coords.lat,
-      lng: coords.lng,
+      lat: pos.lat,
+      lng: pos.lng,
     };
 
     try {
@@ -191,7 +195,7 @@ export default function ObservationForm() {
           <option value="api">Usar endpoint /api/observations</option>
         </select>
       </div>
-
+      <MapPicker value={pos} onChange={setPos} className="mb-4" />
       <button className="px-4 py-2 rounded bg-green-600 text-white">Guardar</button>
 
       {!!status && <p className="text-sm text-green-700">{status}</p>}
